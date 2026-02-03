@@ -1,0 +1,18 @@
+{
+  "name": "prajju-etf-alert-bot",
+  "version": "1.0.0",
+  "main": "bot.cjs",
+  "scripts": {
+    "start": "node bot.cjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "node-cron": "^3.0.3",
+    "twilio": "^5.12.0",
+    "yahoo-finance2": "^3.13.0"
+  }
+}

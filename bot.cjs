@@ -4,7 +4,17 @@ const cron = require("node-cron");
 const twilio = require("twilio");
 
 const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
+const yf = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
+/* ---------------- GLOBAL ERROR HANDLER ---------------- */
+process.on("unhandledRejection", (err) => {
+  printLogs("Unhandled Promise Rejection:", "error", err);
+});
+process.on("uncaughtException", (err) => {
+  printLogs("Uncaught Exception:", "error", err);
+});
+
+/* ---------------- ETF SETUP ---------------- */
 const ETFs = [
   {
     name: "NiftyBees",
@@ -21,17 +31,17 @@ const ETFs = [
     spent: 0,
   },
   {
-    name: "Nasdaq 100",
-    symbol: "MON100.NS",
-    target: 2250,
-    priority: 4,
-    spent: 0,
-  },
-  {
     name: "ICICI Pharma",
     symbol: "ICICIPHARM.NS",
     target: 1500,
     priority: 3,
+    spent: 0,
+  },
+  {
+    name: "Nasdaq 100",
+    symbol: "MON100.NS",
+    target: 2250,
+    priority: 4,
     spent: 0,
   },
   {
@@ -54,30 +64,60 @@ let dailySavings = 0;
 let cashBuffer = 750;
 let isMonthEnd = false;
 
-async function checkDip(etf) {
+/* ---------------- ZONE DETECTION ---------------- */
+function getZone(changePercent) {
+  if (changePercent <= -2) return "crash";
+  if (changePercent <= 1) return "normal";
+  return "skip"; // STRICT RULE
+}
+
+/* Print Console Logs ---------------- */
+function printLogs(message, type = "info", err = null) {
+  const now = new Date();
+  const timestamp = now.toLocaleString();
+  switch (type) {
+    case "info":
+      console.log(`${timestamp} | 💡 ${message}`);
+      break;
+    case "error":
+      console.error(`${timestamp} | ❌ ${message}`, err);
+      break;
+    case "warning":
+      console.warn(`${timestamp} | ⚠️ ${message}`);
+      break;
+    default:
+      console.log(`${timestamp} | 💡 ${message}`);
+      break;
+  }
+}
+
+/* ---------------- FETCH ETF DATA ---------------- */
+async function analyzeETF(etf) {
   try {
-    const yf = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
     const data = await yf.quote(etf.symbol);
+
+    if (!data.regularMarketPrice || !data.regularMarketPreviousClose) {
+      throw new Error("Market data missing");
+    }
+
     const current = data.regularMarketPrice;
     const prevClose = data.regularMarketPreviousClose;
     const changePercent = ((current - prevClose) / prevClose) * 100;
 
-    if (changePercent <= -1) {
-      return {
-        etf,
-        current,
-        drop: changePercent.toFixed(2),
-        canBuy: etf.spent < etf.target,
-        bigCrash: changePercent <= -2,
-      };
-    }
-    return null;
+    return {
+      etf,
+      current,
+      changePercent: changePercent.toFixed(2),
+      zone: getZone(changePercent),
+      canBuy: etf.spent < etf.target,
+    };
   } catch (err) {
-    console.error(`Error fetching ${etf.name}`, err);
-    return null;
+    printLogs(`Error fetching ${etf.name}:`, "error", err.message);
+    return { etf, error: true };
   }
 }
 
+/* ---------------- WHATSAPP SAFE SEND ---------------- */
 async function sendWhatsApp(message) {
   try {
     await client.messages.create({
@@ -85,41 +125,39 @@ async function sendWhatsApp(message) {
       to: process.env.YOUR_WHATSAPP_NUMBER,
       body: message,
     });
-    console.log("✅ WhatsApp alert sent!");
+    printLogs("📲 WhatsApp alert sent");
   } catch (err) {
-    console.error("❌ WhatsApp error:", err.message);
+    printLogs("WhatsApp send failed:", "error", err.message);
   }
 }
 
-// 🔥 FIXED CRON SCHEDULES - No invalid syntax
+/* ---------------- MONTH RESET ---------------- */
 cron.schedule(
-  "30 3 1 * *",
+  "30 4 1 * *",
   () => {
-    // 1st trading day 9:30AM IST (UTC)
-    ETFs.forEach((etf) => (etf.spent = 0));
+    ETFs.forEach((e) => (e.spent = 0));
     dailySavings = 0;
     cashBuffer = 750;
     isMonthEnd = false;
-    console.log("📅 Monthly allocations reset");
+    printLogs("📅 Monthly reset complete");
   },
   { timezone: "UTC" },
 );
 
+/* ---------------- DAILY SAVINGS ---------------- */
 cron.schedule(
-  "30 3 * * 1-5",
+  "30 4 * * 1-5",
   () => {
-    // Daily 9:30AM IST (UTC)
     dailySavings += 500;
-    console.log(`💰 Daily savings: ₹${dailySavings}`);
+    printLogs(`💰 Savings added. Total: ₹${dailySavings}`);
   },
   { timezone: "UTC" },
 );
 
-// Check if last 3 days of month (runs daily, checks date)
+/* ---------------- MONTH END DETECTOR ---------------- */
 cron.schedule(
   "0 * * * *",
   () => {
-    // Hourly check
     const now = new Date();
     const day = now.getUTCDate();
     const lastDay = new Date(
@@ -127,80 +165,92 @@ cron.schedule(
       now.getUTCMonth() + 1,
       0,
     ).getUTCDate();
-
-    if (day >= lastDay - 2 && day <= lastDay) {
-      isMonthEnd = true;
-      console.log(`📅 Month-end mode activated (Day ${day}/${lastDay})`);
-    }
+    if (day >= lastDay - 2) isMonthEnd = true;
   },
   { timezone: "UTC" },
 );
 
+/* ---------------- HEARTBEAT ---------------- */
+cron.schedule("*/30 * * * *", () => {
+  const now = new Date();
+  printLogs("💓 Bot heartbeat — running fine");
+});
+
+/* ---------------- MAIN SCAN (3PM IST) ---------------- */
 cron.schedule(
-  "55 3 * * 1-5",
+  "30 9 * * 1-5",
   async () => {
-    // 9:25AM IST scan (UTC)
-    console.log("🔍 Scanning red days...");
+    printLogs("🔍 Market scan started");
 
-    let signals = [];
-    let buyRecommendations = [];
+    try {
+      let alerts = [];
+      let buyList = [];
+      let errors = [];
 
-    for (let etf of ETFs) {
-      const signal = await checkDip(etf);
-      if (signal) {
-        signals.push(signal);
+      for (let etf of ETFs) {
+        const signal = await analyzeETF(etf);
 
-        const availableCash = dailySavings + (signal.bigCrash ? cashBuffer : 0);
-        if (signal.canBuy && availableCash >= 500) {
-          const buyAmount = signal.bigCrash
-            ? Math.min(1000, availableCash)
+        if (signal.error) {
+          errors.push(etf.name);
+          continue;
+        }
+
+        alerts.push(signal);
+
+        if (!signal.canBuy || dailySavings < 300 || signal.zone === "skip")
+          continue;
+
+        let buyAmount =
+          signal.zone === "crash"
+            ? Math.min(1500, dailySavings + cashBuffer)
             : 500;
-          buyRecommendations.push({
-            etf: signal.etf.name,
-            amount: buyAmount,
-            drop: signal.drop,
-            bigCrash: signal.bigCrash,
-          });
+        if (signal.zone === "crash") cashBuffer = 0;
 
-          signal.etf.spent += buyAmount;
-          dailySavings -= buyAmount;
-          if (signal.bigCrash) cashBuffer = 0;
-        }
-      }
-    }
+        const units = Math.floor(buyAmount / signal.current);
+        if (units > 0) {
+          const actual = units * signal.current;
+          dailySavings -= actual;
+          signal.etf.spent += actual;
 
-    buyRecommendations.sort(
-      (a, b) =>
-        ETFs.find((e) => e.name === a.etf).priority -
-        ETFs.find((e) => e.name === b.etf).priority,
-    );
-
-    if (signals.length > 0 || isMonthEnd) {
-      let alert = "📉 ETF UPDATE\n\n";
-      alert += `💰 Cash: ₹${dailySavings.toFixed(0)} (+₹${cashBuffer} buffer)\n`;
-      alert += `📅 Month-end: ${isMonthEnd ? "YES" : "NO"}\n\n`;
-
-      if (signals.length > 0) {
-        signals.forEach((s) => {
-          alert += `📊 ${s.etf.name}: -${s.drop}% (₹${s.current})\n`;
-          alert += `   Target: ₹${s.etf.target} | Spent: ₹${s.etf.spent}\n\n`;
-        });
-
-        if (buyRecommendations.length > 0) {
-          alert += "🎯 BUY:\n";
-          buyRecommendations.forEach((rec) => {
-            const emoji = rec.bigCrash ? "🚨" : "✅";
-            alert += `${emoji} ${rec.etf}: ₹${rec.amount}\n`;
+          buyList.push({
+            name: signal.etf.name,
+            amount: actual.toFixed(0),
+            units,
           });
         }
-      } else if (isMonthEnd) {
-        alert += "📅 MONTH-END: Deploy remaining cash to NiftyBees/Next50/Gold";
       }
 
-      await sendWhatsApp(alert);
+      /* ---------------- ALERT MESSAGE ---------------- */
+      const now = new Date();
+      let msg = `📉 ETF BOT UPDATE - ${now.toLocaleString()}\n\n💰 Cash: ₹${dailySavings.toFixed(0)} (+₹${cashBuffer})\n\n`;
+
+      alerts.forEach((a) => {
+        msg += `📊 ${a.etf.name}: ${a.changePercent}% → ${a.zone.toUpperCase()}\n`;
+      });
+
+      if (buyList.length > 0) {
+        msg += `\n🎯 BUY TODAY:\n`;
+        buyList.forEach(
+          (b) => (msg += `✅ ${b.name}: ₹${b.amount} (${b.units} units)\n`),
+        );
+      } else {
+        msg += `\n⏸ No buys today (market not in buy zone or low cash)\n`;
+      }
+
+      if (errors.length > 0) {
+        msg += `\n⚠ Data fetch failed for: ${errors.join(", ")}`;
+      }
+
+      await sendWhatsApp(msg);
+    } catch (err) {
+      printLogs("Scan crashed:", "error", err.message);
+      const now = new Date();
+      await sendWhatsApp(
+        `${now.toLocaleString()} | 🚨 ETF BOT ERROR: ${err.message}`,
+      );
     }
   },
   { timezone: "UTC" },
 );
 
-console.log("✅ ETF Bot running perfectly!");
+console.log("✅ ETF BOT WITH FULL ERROR HANDLING RUNNING");

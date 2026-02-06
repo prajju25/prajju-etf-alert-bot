@@ -1,7 +1,7 @@
 {
   "name": "prajju-etf-alert-bot",
   "version": "1.0.0",
-  "description": "ETF dip strategy bot with WhatsApp alerts",
+  "description": "ETF dip strategy bot with Telegram alerts",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -11,11 +11,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "axios": "^1.13.4",
     "dotenv": "^17.2.3",
     "googleapis": "^171.4.0",
     "node-cron": "^3.0.3",
     "openai": "^6.18.0",
-    "twilio": "^5.12.0",
     "yahoo-finance2": "^3.13.0"
   }
 }

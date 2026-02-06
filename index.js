@@ -11,7 +11,7 @@ const {
   updateHoldings,
 } = require("./src/services/sheets.service");
 const { getBuySuggestions } = require("./src/services/gpt.service");
-const { sendWhatsApp } = require("./src/services/whatsapp.service");
+const { sendMessageAlerts } = require("./src/services/messaging.service");
 
 const { violatesGuardrail } = require("./src/engine/guardrails.engine");
 const { getZone } = require("./src/engine/signal.engine");
@@ -49,7 +49,7 @@ cron.schedule("*/30 * * * *", () => {
 
 /* ================= 3 PM MARKET SCAN ================= */
 cron.schedule(
-  "* * * * *",
+  "0 15 * * 1-5",
   async () => {
     try {
       log("3PM Market Scan Started");
@@ -105,7 +105,7 @@ cron.schedule(
         msg += "⏸ No buy today (Market heated / rules blocked)";
       }
 
-      await sendWhatsApp(msg);
+      await sendMessageAlerts(msg);
       log("3PM Scan completed");
 
       for (const buy of finalBuys) {

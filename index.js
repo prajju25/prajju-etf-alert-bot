@@ -22,6 +22,37 @@ const { nowIST } = require("./src/utils/time");
 let dailyCash = 0;
 const RUN_MODE = process.env.RUN_MODE || "LIVE";
 
+// VM Crash Detection + Telegram Alert
+process.on("uncaughtException", async (error) => {
+  console.error("🚨 CRASH DETECTED:", error.message);
+
+  try {
+    await sendMessageAlerts(
+      `🚨 VM/BOT CRASHED!\n\n` +
+        `Error: ${error.message}\n` +
+        `Time: ${new Date().toISOString()}\n` +
+        `Status: VM restarting...`,
+    );
+  } catch (telegramError) {
+    console.error("Failed to send Telegram alert:", telegramError);
+  }
+
+  // Exit with failure (triggers PM2 restart)
+  process.exit(1);
+});
+
+process.on("unhandledRejection", async (reason, promise) => {
+  console.error("🚨 Promise rejected:", reason);
+
+  try {
+    await sendMessageAlerts(
+      `🚨 PROMISE FAILED!\n\nReason: ${reason}\nStatus: Auto-restarting...`,
+    );
+  } catch (e) {}
+
+  process.exit(1);
+});
+
 /* ================= DAILY SAVINGS ================= */
 cron.schedule(
   "30 9 * * 1-5", // 3:00 PM IST

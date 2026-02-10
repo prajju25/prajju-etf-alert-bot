@@ -130,7 +130,7 @@ cron.schedule(
       if (finalBuys.length) {
         msg += "✅ BUY:\n";
         finalBuys.forEach((b) => {
-          msg += `${b.symbol} ₹${b.amount}\n${b.reason}\n\n`;
+          msg += `${b.symbol} ₹${b.amount}\nQuantity:${b.qty}\n${b.reason}\n\n`;
         });
       } else {
         msg += "⏸ No buy today (Market heated / rules blocked)";

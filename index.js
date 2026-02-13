@@ -122,7 +122,7 @@ cron.schedule(
         }
 
         finalBuys.push(buy);
-        dailyCash -= buy.amount;
+        dailyCash -= buy.price * buy.qty;
       }
 
       let msg = `📊 ETF BOT – ${nowIST()}\nCash: ₹${dailyCash}\n\n`;
@@ -130,7 +130,7 @@ cron.schedule(
       if (finalBuys.length) {
         msg += "✅ BUY:\n";
         finalBuys.forEach((b) => {
-          msg += `${b.symbol} ₹${b.amount}\nQuantity:${b.qty}\n${b.reason}\n\n`;
+          msg += `${b.symbol}\nPrice:₹${b.price}\nQuantity:${b.qty}\nTotal Buy Order Price: ₹${b.price * b.qty}\nReason: ${b.reason}\n\n`;
         });
       } else {
         msg += "⏸ No buy today (Market heated / rules blocked)";

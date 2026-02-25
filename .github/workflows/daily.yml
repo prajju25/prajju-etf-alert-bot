@@ -2,7 +2,7 @@ name: Daily Savings
 
 on:
   schedule:
-    - cron: "30 9 * * 1-5"
+    - cron: "0 4 * * 1-5"
   workflow_dispatch:
 
 jobs:

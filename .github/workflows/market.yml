@@ -1,0 +1,39 @@
+name: 3PM Market Scan
+
+on:
+  schedule:
+    - cron: "30 9 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm install
+
+      # 🔐 Create credentials.json from GitHub Secret
+      - name: Create Google credentials file
+        run: echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
+
+      # 🔐 Tell app where credentials file is located
+      - name: Set Google credentials path
+        run: echo "GOOGLE_APPLICATION_CREDENTIALS=credentials.json" >> $GITHUB_ENV
+
+      - name: Run Market Scan
+        run: node scripts/runMarketScan.js
+        env:
+          RUN_MODE: ${{ secrets.RUN_MODE }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GPT_MODEL: ${{ secrets.GPT_MODEL }}
+          GPT_TEMPERATURE: ${{ secrets.GPT_TEMPERATURE }}
+          GPT_MAX_TOKENS: ${{ secrets.GPT_MAX_TOKENS }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

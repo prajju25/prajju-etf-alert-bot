@@ -86,8 +86,43 @@ async function updateHoldings(symbol, qty, amount) {
   }
 }
 
+/* ================= Get investing amount ================= */
+async function getDailyCash() {
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: "Holdings!B12",
+    });
+    const dailyCash = res.data.values?.[0]?.[0] || null;
+    log(`Fetched daily cash from Google Sheets: ₹${dailyCash}`);
+    return Number(dailyCash);
+  } catch (err) {
+    error("Google Sheets read failed while getting daily cash", err.message);
+    throw err;
+  }
+}
+
+async function updateDailyCash(amount) {
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: "Holdings!B12",
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[amount]],
+      },
+    });
+
+    log(`Updated daily cash to ₹${amount} in Google Sheets`);
+  } catch (err) {
+    error("Daily cash update failed", err.message);
+  }
+}
+
 module.exports = {
   getHoldings,
   writeTransaction,
   updateHoldings,
+  getDailyCash,
+  updateDailyCash,
 };

@@ -1,0 +1,32 @@
+name: Daily Savings
+
+on:
+  schedule:
+    - cron: "30 9 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm install
+
+      # 🔐 Create credentials.json from GitHub Secret
+      - name: Create Google credentials file
+        run: echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
+
+      # 🔐 Set credentials path for Google SDK
+      - name: Set Google credentials path
+        run: echo "GOOGLE_APPLICATION_CREDENTIALS=credentials.json" >> $GITHUB_ENV
+
+      - name: Run Daily Savings
+        run: node scripts/runDailySavings.js
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}

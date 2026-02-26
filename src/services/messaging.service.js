@@ -20,7 +20,7 @@ async function sendMessageAlerts(message) {
       disable_web_page_preview: true,
     });
     log("📲 Telegram alert sent");
-    log("Message: " + res.data);
+    log("Message: " + JSON.stringify(res.data, null, 2));
   } catch (err) {
     error("Telegram send failed:", err.response?.data || err.message);
   }

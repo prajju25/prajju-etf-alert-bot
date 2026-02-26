@@ -9,17 +9,20 @@ const {
   getHoldings,
   updateHoldings,
   writeTransaction,
+  updateDailyCash,
 } = require("../services/sheets.service");
 const { fetchETF } = require("../services/yahoo.service");
 const { error, log, warn } = require("../utils/logger");
 const { nowIST } = require("../utils/time");
+
+const RUN_MODE = process.env.RUN_MODE || "LIVE"; // LIVE, BACKTEST, PAPER
 
 async function runMarketScan() {
   try {
     log("3PM Market Scan Started");
 
     const holdings = await getHoldings();
-    const dailyCash = await getDailyCash();
+    let dailyCash = await getDailyCash();
     const market = {};
     let totalInvested = Object.values(holdings).reduce(
       (s, h) => s + h.invested,
@@ -45,6 +48,7 @@ async function runMarketScan() {
     });
 
     const finalBuys = [];
+    let investingAmount = 0;
 
     for (const buy of gptDecision.buy) {
       const etf = ETFs.find((e) => e.symbol === buy.symbol);
@@ -56,10 +60,11 @@ async function runMarketScan() {
       }
 
       finalBuys.push(buy);
-      dailyCash -= buy.price * buy.qty;
+      investingAmount += buy.price * buy.qty;
     }
+    dailyCash -= investingAmount;
 
-    let msg = `📊 ETF BOT – ${nowIST()}\nCash: ₹${dailyCash}\n\n`;
+    let msg = `📊 ETF BOT – ${nowIST()}\nToday Investing amount: ₹${investingAmount}\nCarry forwarded Cash: ₹${dailyCash}\n\n`;
 
     if (finalBuys.length) {
       msg += "✅ BUY:\n";
@@ -73,6 +78,7 @@ async function runMarketScan() {
     await sendMessageAlerts(msg);
     log("3PM Scan completed");
 
+    log("Updating google sheets with the Transactions and Holdings");
     for (const buy of finalBuys) {
       if (RUN_MODE !== "BACKTEST") {
         if (RUN_MODE === "LIVE") {
@@ -87,6 +93,8 @@ async function runMarketScan() {
         }
       }
     }
+    log("Updated google sheets with the Transactions and Holdings");
+    await updateDailyCash(dailyCash);
   } catch (err) {
     error("3PM Scan failed", err.message);
   }

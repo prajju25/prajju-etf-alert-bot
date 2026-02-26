@@ -91,7 +91,7 @@ async function getDailyCash() {
   try {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: "Holdings!B12",
+      range: "Holdings!I1",
     });
     const dailyCash = res.data.values?.[0]?.[0] || null;
     log(`Fetched daily cash from Google Sheets: ₹${dailyCash}`);
@@ -106,7 +106,7 @@ async function updateDailyCash(amount) {
   try {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: "Holdings!B12",
+      range: "Holdings!I1",
       valueInputOption: "RAW",
       requestBody: {
         values: [[amount]],

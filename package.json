@@ -5,8 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "node index.js",
-    "refresh:holidays": "node src/jobs/refreshHolidays.js"
+    "dev": "node index.js"
   },
   "keywords": [],
   "author": "",

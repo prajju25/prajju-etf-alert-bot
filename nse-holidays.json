@@ -1,6 +1,0 @@
-{
-  "year": 0,
-  "fetchedAt": "",
-  "holidays": [],
-  "_note": "This file is auto-generated. Run `npm run refresh:holidays` locally and commit, or trigger the refresh-holidays GitHub Actions workflow."
-}

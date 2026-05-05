@@ -11,8 +11,8 @@ async function runDailySavings() {
     return;
   }
 
-  // Compute daily budget dynamically: ₹15,000 ÷ actual trading days this month
-  const dailyAmount = await getDailyBudget(allocation.monthlyBudget);
+  // Compute daily budget: ₹15,000 ÷ weekdays in this month
+  const dailyAmount = getDailyBudget(allocation.monthlyBudget);
 
   const current = await getDailyCash();
   const updated = current + dailyAmount;

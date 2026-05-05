@@ -12,6 +12,7 @@ const {
   updateDailyCash,
 } = require("../services/sheets.service");
 const { fetchETF } = require("../services/yahoo.service");
+const { isNSEHoliday } = require("../services/nse.service");
 const { error, log, warn } = require("../utils/logger");
 const { nowIST } = require("../utils/time");
 
@@ -20,6 +21,12 @@ const RUN_MODE = process.env.RUN_MODE || "LIVE"; // LIVE, BACKTEST, PAPER
 async function runMarketScan() {
   try {
     log("3PM Market Scan Started");
+
+    if (await isNSEHoliday()) {
+      log("🏖️ NSE Holiday today — skipping market scan");
+      await sendMessageAlerts("🏖️ NSE Holiday today — Market closed. Bot skipped. See you tomorrow!");
+      return;
+    }
 
     const holdings = await getHoldings();
     let dailyCash = await getDailyCash();

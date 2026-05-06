@@ -52,6 +52,7 @@ async function runMarketScan() {
       holdings,
       market,
       cash: dailyCash,
+      allocation, // pass targets so GPT can calculate allocation gaps
     });
 
     const finalBuys = [];

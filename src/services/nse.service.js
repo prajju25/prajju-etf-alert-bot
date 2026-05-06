@@ -13,14 +13,15 @@ const yf = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
  *  - 9:30 AM: NSE opens at 9:15 AM, so 15 min of trades already exist if today is a trading day.
  *  - 3:00 PM: Market has been open 6 hours — very reliable.
  *
+ * Note: yahoo-finance2 returns regularMarketTime as a JS Date object (not Unix seconds).
  * Fails open: if Yahoo Finance is unreachable, bot runs normally.
  */
 async function isNSEHoliday() {
   try {
     const quote = await yf.quote("NIFTYBEES.NS");
 
-    // regularMarketTime is a Unix timestamp (seconds) of the last regular-session trade
-    const lastTradeDate = new Date(quote.regularMarketTime * 1000).toLocaleDateString(
+    // yahoo-finance2 returns regularMarketTime as a JS Date object already
+    const lastTradeDate = new Date(quote.regularMarketTime).toLocaleDateString(
       "en-CA", // gives YYYY-MM-DD format
       { timeZone: "Asia/Kolkata" }
     );

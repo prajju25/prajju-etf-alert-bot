@@ -2,7 +2,7 @@ name: Daily Savings
 
 on:
   schedule:
-    - cron: "0 4 * * 1-5"
+    - cron: "0 4 * * 1-5"  # 9:30 AM IST (UTC+5:30). Quick 2-min job, no waiting.
   workflow_dispatch:
 
 jobs:

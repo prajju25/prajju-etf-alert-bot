@@ -2,7 +2,7 @@ name: Monthly Reset
 
 on:
   schedule:
-    - cron: "0 0 1 * *"
+    - cron: "0 0 1 * *"  # Midnight on 1st of each month. Quick 2-min job.
   workflow_dispatch:
 
 jobs:

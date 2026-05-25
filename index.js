@@ -1,4 +1,13 @@
 require("dotenv").config();
+
+// Bootstrap Google credentials from env var (Koyeb / any cloud deployment).
+// Locally, credentials.json already exists on disk — this block is skipped.
+const fs = require("fs");
+if (process.env.GOOGLE_CREDENTIALS && !fs.existsSync("./credentials.json")) {
+  fs.writeFileSync("./credentials.json", process.env.GOOGLE_CREDENTIALS);
+  console.log("✅ Google credentials written from GOOGLE_CREDENTIALS env var");
+}
+
 const cron = require("node-cron");
 
 const { sendMessageAlerts } = require("./src/services/messaging.service");
@@ -70,5 +79,16 @@ cron.schedule(
   },
   { timezone: "Asia/Kolkata" },
 );
+
+// Minimal health check server — required by Back4App Containers.
+// Back4App needs an open port to confirm the container is alive.
+const http = require("http");
+const PORT = process.env.PORT || 3000;
+http
+  .createServer((req, res) => {
+    res.writeHead(200);
+    res.end("ETF Bot running ✅");
+  })
+  .listen(PORT, () => log(`Health check server listening on port ${PORT}`));
 
 log("✅ ETF BOT RUNNING");

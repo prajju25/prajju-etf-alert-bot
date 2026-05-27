@@ -24,8 +24,8 @@ async function runMarketScan() {
     log("3PM Market Scan Started");
 
     if (await isNSEHoliday()) {
-      log("🏖️ NSE Holiday today — skipping market scan");
-      await sendMessageAlerts("🏖️ NSE Holiday today — Market closed. Bot skipped. See you tomorrow!");
+      log("NSE Holiday today — skipping market scan");
+      await sendMessageAlerts("NSE Holiday today — Market closed. Bot skipped. See you tomorrow!");
       return;
     }
 
@@ -49,7 +49,7 @@ async function runMarketScan() {
       };
 
       // 1.5 s gap between Yahoo Finance calls — reduces 429 risk on Render's
-      // shared datacenter IP.  6 ETFs × 1.5 s = ~9 s total, well within cron window.
+      // shared datacenter IP.  6 ETFs x 1.5 s = ~9 s total, well within cron window.
       await sleep(1500);
     }
 
@@ -57,7 +57,7 @@ async function runMarketScan() {
       holdings,
       market,
       cash: dailyCash,
-      allocation, // pass targets so GPT can calculate allocation gaps
+      allocation,
     });
 
     const finalBuys = [];
@@ -77,15 +77,15 @@ async function runMarketScan() {
     }
     dailyCash -= investingAmount;
 
-    let msg = `📊 ETF BOT – ${nowIST()}\nToday Investing amount: ₹${investingAmount}\nCarry forwarded Cash: ₹${dailyCash}\n\n`;
+    let msg = "ETF BOT - " + nowIST() + "\nToday Investing amount: Rs." + investingAmount + "\nCarry forwarded Cash: Rs." + dailyCash + "\n\n";
 
     if (finalBuys.length) {
-      msg += "✅ BUY:\n";
+      msg += "BUY:\n";
       finalBuys.forEach((b) => {
-        msg += `${b.symbol}\nPrice:₹${b.price}\nQuantity:${b.qty}\nTotal Buy Order Price: ₹${b.price * b.qty}\nReason: ${b.reason}\n\n`;
+        msg += b.symbol + "\nPrice:Rs." + b.price + "\nQuantity:" + b.qty + "\nTotal Buy Order Price: Rs." + (b.price * b.qty) + "\nReason: " + b.reason + "\n\n";
       });
     } else {
-      msg += "⏸ No buy today (Market heated / rules blocked)";
+      msg += "No buy today (Market heated / rules blocked)";
     }
 
     await sendMessageAlerts(msg);
@@ -102,4 +102,14 @@ async function runMarketScan() {
             amount: buy.amount,
             mode: RUN_MODE,
           });
-          await updateHoldings(buy.symbol, buy.qty, buy.amou
+          await updateHoldings(buy.symbol, buy.qty, buy.amount);
+        }
+      }
+    }
+    log("Updated google sheets with the Transactions and Holdings");
+    await updateDailyCash(dailyCash);
+  } catch (err) {
+    error("3PM Scan failed", err.message);
+  }
+}
+module.exports = { runMarketScan };

@@ -30,7 +30,7 @@ async function getHoldings() {
     });
 
     log(
-      `Fetched holdings from Google Sheets: ${Object.keys(holdings).join(", ")}`,
+      "Fetched holdings from Google Sheets: " + Object.keys(holdings).join(", "),
     );
 
     return holdings;
@@ -52,7 +52,7 @@ async function writeTransaction({ symbol, qty, price, amount, mode }) {
       },
     });
 
-    log(`Transaction written for ${symbol}`);
+    log("Transaction written for " + symbol);
   } catch (err) {
     error("Transaction write failed", err.message);
   }
@@ -70,7 +70,7 @@ async function updateHoldings(symbol, qty, amount) {
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `Holdings!A2:E`,
+      range: "Holdings!A2:E",
       valueInputOption: "RAW",
       requestBody: {
         values: Object.entries({
@@ -80,7 +80,7 @@ async function updateHoldings(symbol, qty, amount) {
       },
     });
 
-    log(`Holdings updated for ${symbol}`);
+    log("Holdings updated for " + symbol);
   } catch (err) {
     error("Holdings update failed", err.message);
   }
@@ -94,7 +94,7 @@ async function getDailyCash() {
       range: "Holdings!I1",
     });
     const dailyCash = res.data.values?.[0]?.[0] || null;
-    log(`Fetched daily cash from Google Sheets: ₹${dailyCash}`);
+    log("Fetched daily cash from Google Sheets: Rs." + dailyCash);
     return Number(dailyCash);
   } catch (err) {
     error("Google Sheets read failed while getting daily cash", err.message);
@@ -113,9 +113,48 @@ async function updateDailyCash(amount) {
       },
     });
 
-    log(`Updated daily cash to ₹${amount} in Google Sheets`);
+    log("Updated daily cash to Rs." + amount + " in Google Sheets");
   } catch (err) {
     error("Daily cash update failed", err.message);
+  }
+}
+
+/* ================= DYNAMIC ALLOCATION CONFIG ================= */
+// Stored as a JSON string in Holdings!K1
+// Format: {"core":45,"sector":10,"global":20,"commodity":25,"silverMax":13}
+
+async function loadAllocationConfig() {
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: "Holdings!K1",
+    });
+    const raw = res.data.values?.[0]?.[0];
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    log("Loaded allocation config from Sheets: " + raw);
+    return parsed;
+  } catch (err) {
+    // Cell empty or parse error — not a crash, just use defaults
+    log("No saved allocation config found — using defaults");
+    return null;
+  }
+}
+
+async function saveAllocationConfig(maxAlloc) {
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: "Holdings!K1",
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[JSON.stringify(maxAlloc)]],
+      },
+    });
+    log("Saved allocation config to Sheets: " + JSON.stringify(maxAlloc));
+  } catch (err) {
+    error("Allocation config save failed", err.message);
+    throw err;
   }
 }
 
@@ -125,4 +164,6 @@ module.exports = {
   updateHoldings,
   getDailyCash,
   updateDailyCash,
+  loadAllocationConfig,
+  saveAllocationConfig,
 };

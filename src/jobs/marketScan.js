@@ -1,4 +1,4 @@
-const allocation = require("../config/allocation");
+const { get: getDynamicAllocation } = require("../config/dynamicAllocation");
 const ETFs = require("../config/etfs");
 const { violatesGuardrail } = require("../engine/guardrails.engine");
 const { getZone } = require("../engine/signal.engine");
@@ -28,6 +28,9 @@ async function runMarketScan() {
       await sendMessageAlerts("NSE Holiday today — Market closed. Bot skipped. See you tomorrow!");
       return;
     }
+
+    // Read allocation at scan time so Telegram changes take effect immediately
+    const allocation = getDynamicAllocation();
 
     const holdings = await getHoldings();
     let dailyCash = await getDailyCash();
@@ -68,7 +71,7 @@ async function runMarketScan() {
       if (!etf) continue;
 
       if (violatesGuardrail(etf, holdings, totalInvested, allocation)) {
-        warn(`Guardrail blocked ${etf.name}`);
+        warn("Guardrail blocked " + etf.name);
         continue;
       }
 

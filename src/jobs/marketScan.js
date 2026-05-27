@@ -13,6 +13,7 @@ const {
 } = require("../services/sheets.service");
 const { fetchETF } = require("../services/yahoo.service");
 const { isNSEHoliday } = require("../services/nse.service");
+const { sleep } = require("../services/yf-client");
 const { error, log, warn } = require("../utils/logger");
 const { nowIST } = require("../utils/time");
 
@@ -46,6 +47,10 @@ async function runMarketScan() {
         name: etf.name,
         category: etf.category,
       };
+
+      // 1.5 s gap between Yahoo Finance calls — reduces 429 risk on Render's
+      // shared datacenter IP.  6 ETFs × 1.5 s = ~9 s total, well within cron window.
+      await sleep(1500);
     }
 
     const gptDecision = await getBuySuggestions({
@@ -97,14 +102,4 @@ async function runMarketScan() {
             amount: buy.amount,
             mode: RUN_MODE,
           });
-          await updateHoldings(buy.symbol, buy.qty, buy.amount);
-        }
-      }
-    }
-    log("Updated google sheets with the Transactions and Holdings");
-    await updateDailyCash(dailyCash);
-  } catch (err) {
-    error("3PM Scan failed", err.message);
-  }
-}
-module.exports = { runMarketScan };
+          await updateHoldings(buy.symbol, buy.qty, buy.amou

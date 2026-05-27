@@ -1,7 +1,5 @@
-const YahooFinance = require("yahoo-finance2").default;
+const { yf, fetchWithRetry } = require("./yf-client");
 const { log, warn } = require("../utils/logger");
-
-const yf = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
 /**
  * Checks whether today is an NSE trading holiday.
@@ -18,7 +16,7 @@ const yf = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
  */
 async function isNSEHoliday() {
   try {
-    const quote = await yf.quote("NIFTYBEES.NS");
+    const quote = await fetchWithRetry(() => yf.quote("NIFTYBEES.NS"));
 
     // yahoo-finance2 returns regularMarketTime as a JS Date object already
     const lastTradeDate = new Date(quote.regularMarketTime).toLocaleDateString(
@@ -69,13 +67,13 @@ function countWeekdaysInMonth(year, month) {
 /**
  * Returns the daily savings amount for the current month.
  *
- * Formula: monthlyBudget ÷ weekdays in current month
+ * Formula: monthlyBudget / weekdays in current month
  *
  * Because we skip NSE holidays, the actual total accumulated will be:
- *   (weekdays - NSE_holidays_this_month) × dailyBudget
+ *   (weekdays - NSE_holidays_this_month) * dailyBudget
  *
- * This is slightly under ₹15,000 on months with holidays, but the difference
- * (typically ₹600–₹1,500) rolls forward as cash for the next month's buying.
+ * This is slightly under 15,000 on months with holidays, but the difference
+ * (typically 600-1,500) rolls forward as cash for the next month's buying.
  *
  * @param {number} monthlyBudget
  */
@@ -83,7 +81,7 @@ function getDailyBudget(monthlyBudget) {
   const now = new Date();
   const weekdays = countWeekdaysInMonth(now.getFullYear(), now.getMonth());
   const daily = Math.round(monthlyBudget / weekdays);
-  log(`${now.toLocaleString("default", { month: "long" })} has ${weekdays} weekdays → daily budget = ₹${daily}`);
+  log(`${now.toLocaleString("default", { month: "long" })} has ${weekdays} weekdays -> daily budget = Rs.${daily}`);
   return daily;
 }
 

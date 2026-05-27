@@ -1,12 +1,7 @@
 name: 3PM Market Scan
 
 on:
-  schedule:
-    - cron: "30 9 * * 1-5"  # 3:00 PM IST (9:30 AM UTC).
-                              # Job runs in 2-3 min (no waiting). ~60 min/month total.
-                              # GitHub typical delay: 5-15 min → alert at 3:05-3:15 PM IST.
-                              # Market closes 3:30 PM IST → 15-25 min window to act.
-  workflow_dispatch:
+  workflow_dispatch: # Manual emergency trigger only — bot runs 24/7 on Render
 
 jobs:
   run:

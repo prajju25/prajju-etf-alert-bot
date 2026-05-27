@@ -1,9 +1,7 @@
 name: Monthly Reset
 
 on:
-  schedule:
-    - cron: "0 0 1 * *"  # Midnight on 1st of each month. Quick 2-min job.
-  workflow_dispatch:
+  workflow_dispatch: # Manual emergency trigger only — bot runs 24/7 on Render
 
 jobs:
   run:

@@ -137,4 +137,4 @@ Respond ONLY in RAW JSON. No markdown, no explanation, no text outside JSON:
   }
 }
 
-module.exports = { getBuySuggestions };
+module.exports = { getBuySuggestions, buildAllocationContext };

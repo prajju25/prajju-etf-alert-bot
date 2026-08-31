@@ -19,9 +19,17 @@ const { nowIST } = require("../utils/time");
 
 const RUN_MODE = process.env.RUN_MODE || "LIVE"; // LIVE, BACKTEST, PAPER
 
-async function runMarketScan() {
+/**
+ * @param {object} [opts]
+ * @param {boolean} [opts.dryRun]  Preview only — send the Telegram alert but make
+ *                                 NO writes to Google Sheets (transactions,
+ *                                 holdings, daily cash). Used by the /scan
+ *                                 Telegram command. Cron calls this with no args.
+ */
+async function runMarketScan(opts = {}) {
+  const dryRun = opts.dryRun === true;
   try {
-    log("3PM Market Scan Started");
+    log(dryRun ? "Market Scan Started (DRY RUN — no Sheet writes)" : "3PM Market Scan Started");
 
     if (await isNSEHoliday()) {
       log("NSE Holiday today — skipping market scan");
@@ -80,7 +88,7 @@ async function runMarketScan() {
     }
     dailyCash -= investingAmount;
 
-    let msg = "ETF BOT - " + nowIST() + "\nToday Investing amount: Rs." + investingAmount + "\nCarry forwarded Cash: Rs." + dailyCash + "\n\n";
+    let msg = (dryRun ? "[DRY RUN] " : "") + "ETF BOT - " + nowIST() + "\nToday Investing amount: Rs." + investingAmount + "\nCarry forwarded Cash: Rs." + dailyCash + "\n\n";
 
     if (finalBuys.length) {
       msg += "BUY:\n";
@@ -93,6 +101,11 @@ async function runMarketScan() {
 
     await sendMessageAlerts(msg);
     log("3PM Scan completed");
+
+    if (dryRun) {
+      log("Dry run — skipping all Google Sheets writes");
+      return;
+    }
 
     log("Updating google sheets with the Transactions and Holdings");
     for (const buy of finalBuys) {
@@ -113,6 +126,7 @@ async function runMarketScan() {
     await updateDailyCash(dailyCash);
   } catch (err) {
     error("3PM Scan failed", err.message);
+    if (dryRun) throw err; // let the /scan Telegram command surface the failure
   }
 }
 module.exports = { runMarketScan };

@@ -1,22 +1,17 @@
-const { yf, fetchWithRetry } = require("./yf-client");
+const { chartQuote, sleep } = require("./yf-client");
 const { log, error } = require("../utils/logger");
 
 async function fetchETF(symbol) {
   try {
-    const q = await fetchWithRetry(() => yf.quote(symbol));
-
-    const changePct =
-      ((q.regularMarketPrice - q.regularMarketPreviousClose) /
-        q.regularMarketPreviousClose) *
-      100;
+    const q = await chartQuote(symbol);
 
     log(
-      "Fetched " + symbol + ": Rs." + q.regularMarketPrice + " (" + changePct.toFixed(2) + "%)",
+      "Fetched " + symbol + ": Rs." + q.price + " (" + q.changePct.toFixed(2) + "%)",
     );
 
     return {
-      price: q.regularMarketPrice,
-      changePct: Number(changePct.toFixed(2)),
+      price: q.price,
+      changePct: q.changePct,
     };
   } catch (err) {
     error("Yahoo fetch failed for " + symbol, err.message);
@@ -25,36 +20,31 @@ async function fetchETF(symbol) {
 }
 
 /**
- * Batch quote for multiple symbols in ONE request.
+ * Quotes for many symbols.
  *
- * yahoo-finance2 accepts an array and returns one HTTP call, so this avoids
- * the per-symbol 1.5 s pacing the market scan needs — safe to call on demand
- * from the Telegram listener.
+ * The crumb-free chart endpoint is one request per symbol, but it is cheap and
+ * not rate-limited like the crumb path — a short stagger keeps us polite on
+ * Render's shared IP. ~6 symbols x 400 ms = ~2.5 s, fine for a Telegram command.
  *
  * @param {string[]} symbols  e.g. ["NIFTYBEES.NS", "GOLDBEES.NS"]
  * @returns {Promise<Object>} { [symbol]: { price, changePct } }
  */
 async function fetchETFs(symbols) {
-  try {
-    const list = await fetchWithRetry(() => yf.quote(symbols));
-    const arr = Array.isArray(list) ? list : [list];
+  const out = {};
 
-    const out = {};
-    for (const q of arr) {
-      const prev = q.regularMarketPreviousClose;
-      const changePct = prev
-        ? ((q.regularMarketPrice - prev) / prev) * 100
-        : 0;
-      out[q.symbol] = {
-        price: q.regularMarketPrice,
-        changePct: Number(changePct.toFixed(2)),
-      };
+  for (let i = 0; i < symbols.length; i++) {
+    const sym = symbols[i];
+    try {
+      const q = await chartQuote(sym);
+      out[sym] = { price: q.price, changePct: q.changePct };
+    } catch (err) {
+      error("Yahoo batch fetch failed for " + sym, err.message);
+      throw err;
     }
-    return out;
-  } catch (err) {
-    error("Yahoo batch fetch failed", err.message);
-    throw err;
+    if (i < symbols.length - 1) await sleep(400);
   }
+
+  return out;
 }
 
 module.exports = { fetchETF, fetchETFs };

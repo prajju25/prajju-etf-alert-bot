@@ -11,6 +11,7 @@
  *   /gainers             — today's movers across the ETF universe
  *   /target              — allocation vs target (what the buy engine sees)
  *   /scan                — run a market-scan preview now (no Sheet writes)
+ *   /buy SYM QTY PRICE   — manually record a purchase to the Sheet (with confirmation)
  *   /allocation          — show current allocation %
  *   /set core=40 ...     — propose a change (with confirmation)
  *   yes / no             — confirm or cancel a pending change
@@ -18,7 +19,14 @@
  */
 const axios = require("axios");
 const { get: getAllocation, update: updateAllocation } = require("../config/dynamicAllocation");
-const { saveAllocationConfig, getHoldings, getDailyCash } = require("./sheets.service");
+const {
+  saveAllocationConfig,
+  getHoldings,
+  getDailyCash,
+  updateDailyCash,
+  writeTransaction,
+  updateHoldings,
+} = require("./sheets.service");
 const { fetchETFs } = require("./yahoo.service");
 const { buildAllocationContext } = require("./gpt.service");
 const { getZone } = require("../engine/signal.engine");
@@ -267,6 +275,110 @@ function validate(current, proposed) {
   return null;
 }
 
+/* ─── Manual buy entry ─────────────────────────────────────────────────── */
+
+// Accepts a full symbol ("NIFTYBEES.NS") or the short name ("niftybees"),
+// case-insensitive. Returns the ETF config row or null.
+function resolveEtf(token) {
+  const t = String(token || "").trim().toLowerCase();
+  return (
+    ETFs.find((e) => e.symbol.toLowerCase() === t) ||
+    ETFs.find((e) => e.name.toLowerCase() === t) ||
+    null
+  );
+}
+
+/**
+ * Parses "/buy <sym|name> <qty> <price> [nocash]".
+ * @returns {{etf, qty, price, amount, updateCash} | {err: string}}
+ */
+function parseBuy(text) {
+  const parts = text.trim().split(/\s+/).slice(1); // drop the command word
+  if (parts.length < 3 || parts.length > 4) {
+    return { err: "Usage: `/buy NIFTYBEES 2 273.25` (symbol/name, qty, price, optional `nocash`)" };
+  }
+
+  const etf = resolveEtf(parts[0]);
+  if (!etf) return { err: "Unknown ETF: " + parts[0] + ". Try one of: " + ETFs.map((e) => e.name).join(", ") };
+
+  const qty = Number(parts[1]);
+  if (!Number.isInteger(qty) || qty <= 0) return { err: "Qty must be a positive whole number (got " + parts[1] + ")" };
+
+  const price = Number(parts[2]);
+  if (!Number.isFinite(price) || price <= 0) return { err: "Price must be a positive number (got " + parts[2] + ")" };
+
+  let updateCash = true;
+  if (parts[3] !== undefined) {
+    if (parts[3].toLowerCase() === "nocash") updateCash = false;
+    else return { err: "Unknown 4th argument: " + parts[3] + " (only `nocash` is allowed)" };
+  }
+
+  return { etf, qty, price, amount: Number((qty * price).toFixed(2)), updateCash };
+}
+
+/* ─── Pending-confirmation appliers (yes) ──────────────────────────────── */
+
+async function applyPendingAllocation(chatId, p) {
+  const current = getAllocation().maxAllocationPercent;
+  const merged = { ...current, ...p.proposed };
+  updateAllocation(merged);
+  try {
+    await saveAllocationConfig(merged);
+    await sendReply(chatId,
+      "*Allocation updated and saved!*\n\n" + formatAlloc(merged) + "\n\nTakes effect from next market scan."
+    );
+  } catch (err) {
+    await sendReply(chatId,
+      "*Allocation updated in memory* (Sheets save failed: " + err.message + ")\nWill reset on redeploy."
+    );
+  }
+}
+
+async function applyPendingBuy(chatId, p) {
+  const { etf, qty, price, amount, updateCash } = p;
+  try {
+    await writeTransaction({ symbol: etf.symbol, qty, price, amount, mode: "MANUAL" });
+    await updateHoldings(etf.symbol, qty, amount);
+
+    let cashLine = "";
+    if (updateCash) {
+      try {
+        const cur = await getDailyCash();
+        const next = Number((cur - amount).toFixed(2));
+        await updateDailyCash(next);
+        cashLine = "\nCash pool: " + inr(cur) + " -> " + inr(next);
+      } catch (e) {
+        cashLine = "\n(cash pool NOT updated: " + e.message + ")";
+      }
+    }
+
+    // Read back so the reply doubles as verification. sheets.service swallows
+    // its own write errors, so this is the only way to know it really landed.
+    let verify = "";
+    try {
+      const before = p.beforeQty ?? null;
+      const h = await getHoldings();
+      const now = h[etf.symbol];
+      if (now) {
+        verify = "\n\nHoldings now: qty " + now.qty + ", invested " + inr(now.invested);
+        if (before !== null && now.qty !== before + qty) {
+          verify += "\nWARNING: expected qty " + (before + qty) + " — the Holdings write may not have applied. Check the Sheet.";
+        }
+      }
+    } catch (e) { /* non-fatal */ }
+
+    log("Manual buy recorded: " + etf.symbol + " qty " + qty + " @ " + price);
+    await sendReply(chatId,
+      "*Manual buy recorded.*\n\n" + etf.name + " (" + etf.symbol + ")\n" +
+      "- Qty " + qty + " @ " + inr(price) + "  |  Amount " + inr(amount) +
+      cashLine + verify
+    );
+  } catch (err) {
+    error("Manual buy failed", err.message);
+    await sendReply(chatId, "Manual buy FAILED: " + err.message + "\nRun /holdings to check what landed.");
+  }
+}
+
 /* ─── Command handlers ──────────────────────────────────────────────────── */
 
 async function handleMessage(msg) {
@@ -280,27 +392,19 @@ async function handleMessage(msg) {
   const alloc = getAllocation();
   const current = alloc.maxAllocationPercent;
 
-  /* ── yes / no: confirm or cancel pending change ── */
+  /* ── yes / no: confirm or cancel a pending action ── */
   if (pending && pending.chatId === chatId) {
-    if (lower === "yes" || lower === "confirm") {
-      const merged = { ...current, ...pending.proposed };
-      updateAllocation(merged);
-      try {
-        await saveAllocationConfig(merged);
-        await sendReply(chatId,
-          "*Allocation updated and saved!*\n\n" + formatAlloc(merged) + "\n\nTakes effect from next market scan."
-        );
-      } catch (err) {
-        await sendReply(chatId,
-          "*Allocation updated in memory* (Sheets save failed: " + err.message + ")\nWill reset on redeploy."
-        );
-      }
+    if (lower === "no" || lower === "cancel") {
+      const what = pending.type === "buy" ? "Buy not recorded." : "Allocation unchanged.";
       pending = null;
+      await sendReply(chatId, "Cancelled. " + what);
       return;
     }
-    if (lower === "no" || lower === "cancel") {
-      pending = null;
-      await sendReply(chatId, "Cancelled. Allocation unchanged.");
+    if (lower === "yes" || lower === "confirm") {
+      const p = pending;
+      pending = null; // clear first so a slow Sheets call can't be double-fired
+      if (p.type === "buy") await applyPendingBuy(chatId, p);
+      else await applyPendingAllocation(chatId, p);
       return;
     }
   }
@@ -387,6 +491,49 @@ async function handleMessage(msg) {
     return;
   }
 
+  /* ── /buy SYM QTY PRICE [nocash] — manually record a purchase ── */
+  if (lower === "/buy" || lower.startsWith("/buy ")) {
+    const parsed = parseBuy(text);
+    if (parsed.err) {
+      await sendReply(chatId, parsed.err);
+      return;
+    }
+
+    const { etf, qty, price, amount, updateCash } = parsed;
+
+    // Build a preview using current Sheet state.
+    let holdLine = "";
+    let cashLine = "";
+    let beforeQty = null;
+    try {
+      const h = await getHoldings();
+      const cur = h[etf.symbol] || { qty: 0, invested: 0 };
+      beforeQty = cur.qty;
+      holdLine =
+        "\nHoldings after: qty " + cur.qty + " -> " + (cur.qty + qty) +
+        "  |  invested " + inr(cur.invested) + " -> " + inr(cur.invested + amount);
+    } catch (e) { /* preview only — non-fatal */ }
+    if (updateCash) {
+      try {
+        const c = await getDailyCash();
+        cashLine = "\nCash pool: " + inr(c) + " -> " + inr(c - amount);
+      } catch (e) { /* non-fatal */ }
+    } else {
+      cashLine = "\nCash pool: unchanged (nocash)";
+    }
+
+    pending = { chatId, type: "buy", etf, qty, price, amount, updateCash, beforeQty };
+
+    await sendReply(chatId,
+      "*Record manual buy?*\n\n" +
+      etf.name + " (" + etf.symbol + ")\n" +
+      "- Qty " + qty + " @ " + inr(price) + "  |  Amount " + inr(amount) +
+      holdLine + cashLine +
+      "\n\nReply *yes* to confirm or *no* to cancel."
+    );
+    return;
+  }
+
   /* ── /allocation — show current ── */
   if (lower === "/allocation" || lower === "/status") {
     await sendReply(chatId,
@@ -405,6 +552,7 @@ async function handleMessage(msg) {
       "/gainers — today's movers across all ETFs\n" +
       "/target — allocation vs target (buy-engine view)\n" +
       "/scan — run a market-scan preview now (no Sheet writes)\n" +
+      "/buy NIFTYBEES 2 273.25 — record a manual purchase to the Sheet (add `nocash` to leave the cash pool alone)\n" +
       "/allocation — view current allocation\n" +
       "/set core=45 sector=10 global=20 commodity=25 silverMax=13 — propose changes\n" +
       "yes / no — confirm or cancel a pending change\n\n" +
@@ -445,7 +593,7 @@ async function handleMessage(msg) {
     }
 
     const summary = allocationSummary(current, proposed);
-    pending = { chatId, proposed };
+    pending = { chatId, type: "allocation", proposed };
 
     await sendReply(chatId,
       "*Proposed allocation change:*\n\n" + summary +

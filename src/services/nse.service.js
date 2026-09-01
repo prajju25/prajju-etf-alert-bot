@@ -1,4 +1,4 @@
-const { yf, fetchWithRetry } = require("./yf-client");
+const { chartQuote } = require("./yf-client");
 const { log, warn } = require("../utils/logger");
 
 /**
@@ -11,15 +11,21 @@ const { log, warn } = require("../utils/logger");
  *  - 9:30 AM: NSE opens at 9:15 AM, so 15 min of trades already exist if today is a trading day.
  *  - 3:00 PM: Market has been open 6 hours — very reliable.
  *
- * Note: yahoo-finance2 returns regularMarketTime as a JS Date object (not Unix seconds).
+ * Uses the crumb-free chart endpoint (chartQuote) so it is not blocked by the
+ * 429 "Failed to get crumb" errors Yahoo returns to datacenter IPs.
  * Fails open: if Yahoo Finance is unreachable, bot runs normally.
  */
 async function isNSEHoliday() {
   try {
-    const quote = await fetchWithRetry(() => yf.quote("NIFTYBEES.NS"));
+    const quote = await chartQuote("NIFTYBEES.NS");
 
-    // yahoo-finance2 returns regularMarketTime as a JS Date object already
-    const lastTradeDate = new Date(quote.regularMarketTime).toLocaleDateString(
+    if (!quote.marketTime) {
+      warn("Holiday check: chart endpoint returned no market time — assuming market is open");
+      return false;
+    }
+
+    // chartQuote() returns marketTime as a JS Date
+    const lastTradeDate = quote.marketTime.toLocaleDateString(
       "en-CA", // gives YYYY-MM-DD format
       { timeZone: "Asia/Kolkata" }
     );

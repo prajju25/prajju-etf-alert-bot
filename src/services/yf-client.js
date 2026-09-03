@@ -80,10 +80,15 @@ async function chartQuote(symbol, { retries = 4, baseDelay = 2000 } = {}) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     const host = CHART_HOSTS[(attempt - 1) % CHART_HOSTS.length];
     try {
+      // range MUST be "1d": chartPreviousClose is "the close immediately before
+      // the first bar in the returned window", so with range=1d it is the PRIOR
+      // TRADING DAY's close — exactly the reference the dip strategy needs.
+      // With range=5d it was the close ~5 sessions back, turning changePct into
+      // a stale multi-day move (a +2% up-day was reported as -3.5% → false BUY).
       const res = await axios.get(
         `${host}/v8/finance/chart/${encodeURIComponent(symbol)}`,
         {
-          params: { range: "5d", interval: "1d" },
+          params: { range: "1d", interval: "1d" },
           headers: BROWSER_HEADERS,
           timeout: 15000,
         }
@@ -96,13 +101,16 @@ async function chartQuote(symbol, { retries = 4, baseDelay = 2000 } = {}) {
       }
 
       const price = meta.regularMarketPrice;
-      const prevClose =
-        meta.chartPreviousClose != null
-          ? meta.chartPreviousClose
-          : meta.previousClose != null
-            ? meta.previousClose
-            : price;
-      const changePct = prevClose ? ((price - prevClose) / prevClose) * 100 : 0;
+
+      // previousClose is the unambiguous field but is often absent for .NS
+      // symbols; chartPreviousClose (with range=1d) is the same value.
+      let prevClose =
+        meta.previousClose != null
+          ? meta.previousClose
+          : meta.chartPreviousClose;
+      if (!(prevClose > 0)) prevClose = price; // last-resort: report a flat day
+
+      const changePct = ((price - prevClose) / prevClose) * 100;
 
       return {
         symbol: meta.symbol || symbol,

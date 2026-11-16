@@ -28,10 +28,7 @@ jobs:
         run: node scripts/runMarketScan.js
         env:
           RUN_MODE: ${{ secrets.RUN_MODE }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GPT_MODEL: ${{ secrets.GPT_MODEL }}
-          GPT_TEMPERATURE: ${{ secrets.GPT_TEMPERATURE }}
-          GPT_MAX_TOKENS: ${{ secrets.GPT_MAX_TOKENS }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SHEET_ID: ${{ secrets.SHEET_ID }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

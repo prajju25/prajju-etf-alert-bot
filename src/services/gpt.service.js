@@ -1,7 +1,29 @@
-const OpenAI = require("openai");
+const Anthropic = require("@anthropic-ai/sdk");
 const { error, log } = require("../utils/logger");
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Model is configurable so it can be changed from the Render dashboard without a deploy.
+const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
+
+// Created lazily so a missing ANTHROPIC_API_KEY can never crash the bot at boot;
+// it surfaces as an explicit "AI decision failed" alert on the first scan instead.
+let client = null;
+function getClient() {
+  if (!client) client = new Anthropic(); // reads ANTHROPIC_API_KEY from the environment
+  return client;
+}
+
+/**
+ * Pulls the JSON object out of the model's reply. The prompt demands raw JSON,
+ * but tolerate a ```json fence or stray prose around it rather than silently
+ * losing the day's decision.
+ */
+function extractJson(text) {
+  const cleaned = String(text || "").replace(/```(?:json)?/gi, "").trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end <= start) throw new Error("reply contained no JSON object");
+  return JSON.parse(cleaned.slice(start, end + 1));
+}
 
 /**
  * Builds per-ETF allocation context for GPT.
@@ -122,18 +144,38 @@ Respond ONLY in RAW JSON. No markdown, no explanation, no text outside JSON:
   "skip": ["symbol1", "symbol2"]
 }`;
 
-    const res = await openai.chat.completions.create({
-      model: process.env.GPT_MODEL,
+    // Opus 5.5 notes: temperature/top_p are removed (400 if sent) and thinking is always on,
+    // so depth is controlled with effort. max_tokens includes thinking tokens - keep headroom.
+    const res = await getClient().messages.create({
+      model: MODEL,
+      max_tokens: 4000,
+      output_config: { effort: "low" },
       messages: [{ role: "user", content: prompt }],
-      temperature: Number(process.env.GPT_TEMPERATURE),
-      max_tokens: Number(process.env.GPT_MAX_TOKENS),
     });
 
-    log("GPT buy suggestion: " + res.choices[0].message.content);
-    return JSON.parse(res.choices[0].message.content);
+    if (res.stop_reason === "refusal") {
+      throw new Error("model refused the request (" + (res.stop_details?.category || "unknown") + ")");
+    }
+    if (res.stop_reason === "max_tokens") {
+      throw new Error("reply cut off at max_tokens");
+    }
+
+    const text = res.content
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+
+    log("Claude buy suggestion (" + MODEL + "): " + text);
+
+    const parsed = extractJson(text);
+    return {
+      buy: Array.isArray(parsed.buy) ? parsed.buy : [],
+      skip: Array.isArray(parsed.skip) ? parsed.skip : [],
+    };
   } catch (err) {
-    error("GPT suggestion failed", err.message);
-    return { buy: [], skip: [] };
+    error("Claude suggestion failed", err.message);
+    // `error` lets the scan tell you the AI step failed instead of reporting "No buy today".
+    return { buy: [], skip: [], error: err.message };
   }
 }
 

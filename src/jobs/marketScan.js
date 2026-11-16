@@ -90,7 +90,13 @@ async function runMarketScan(opts = {}) {
 
     let msg = (dryRun ? "[DRY RUN] " : "") + "ETF BOT - " + nowIST() + "\nToday Investing amount: Rs." + investingAmount + "\nCarry forwarded Cash: Rs." + dailyCash + "\n\n";
 
-    if (finalBuys.length) {
+    if (gptDecision.error) {
+      // The AI step failed (bad key, outage, unparseable reply): say so instead of a
+      // misleading "No buy today". Strip Markdown specials - Telegram rejects the whole
+      // message on a stray _ or * and the alert would be silently lost.
+      const why = String(gptDecision.error).replace(/[_*`\[\]]/g, " ").slice(0, 200);
+      msg += "AI DECISION FAILED - no buys were evaluated today.\nReason: " + why + "\nCheck the Anthropic API key and Render logs.";
+    } else if (finalBuys.length) {
       msg += "BUY:\n";
       finalBuys.forEach((b) => {
         msg += b.symbol + "\nPrice:Rs." + b.price + "\nQuantity:" + b.qty + "\nTotal Buy Order Price: Rs." + (b.price * b.qty) + "\nReason: " + b.reason + "\n\n";

@@ -14,7 +14,7 @@ It provides **clear, disciplined buy recommendations** so you can execute manual
 - Avoid overheated (+1% or more) days
 - Respect **allocation guardrails**
 - Track investments in **Google Sheets**
-- Use **ChatGPT** for intelligent, rule-based decisions
+- Size every buy with a **paced, tier-based algorithm** (no LLM, fully deterministic)
 
 ---
 
@@ -59,7 +59,7 @@ Every trading day, the bot performs:
      - Invested amounts
      - Target allocations
 
-3. **Ask ChatGPT for decision**
+3. **Size the buys (paced, dip-tiered)**
    - Inputs:
      - Market data
      - Holdings
@@ -108,7 +108,7 @@ ETF list and allocation rules are **config-driven**, not hardcoded.
 └────┬────────┘
 │
 ┌────▼────────────┐
-│ ChatGPT (LLM) │ → Buy / Skip / Amount decision
+│ Sizing engine │ → Buy / Skip / Quantity
 │ Dip Strategy │
 └────┬────────────┘
 │
@@ -116,24 +116,14 @@ ETF list and allocation rules are **config-driven**, not hardcoded.
 │ Telegram Bot │ → Alert at 3 PM IST
 └─────────────────┘
 
-## 🤖 Role of ChatGPT
+## Buy sizing algorithm (src/engine/sizing.engine.js)
 
-ChatGPT is used as a **decision engine**, not a predictor.
-
-It receives structured input and responds in strict JSON:
-{
-"buy": [
-{
-"symbol": "NIFTYBEES.NS",
-"amount": 750,
-"reason": "Price is -0.8% and allocation below target"
-}
-],
-"skip": [
-"GOLDBEES.NS",
-"SILVERBEES.NS"
-]
-}
+1. **Daily budget** B = (cash pool + daily saving x (trading days left - 1)) / trading days left.
+   A day with no buy raises tomorrow's B; unspent cash carries forward, including into the next month (no monthly reset).
+2. **ETF slice** = B x (ETF monthly target / sum of targets). Only an ETF that is itself in a dip spends its slice.
+3. **Dip tier** multiplies the slice: 0-1% drop = 0.5x, 1-2% = 1x, 2-3% = 2x, 3%+ = 3x (config: `buyTiers` in src/config/allocation.js).
+4. **Quantity** = round(spend / price); 0 means the money stays in the pool. Total per day is capped at min(pool, 3 x B).
+5. An ETF must also have a positive allocation gap and pass the category / silver caps.
 
 ## Telegram Alerts
 
@@ -156,12 +146,6 @@ Mode: LIVE
 Create a .env file: # Telegram
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
-
-    # ChatGPT
-    OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
-    GPT_MODEL=gpt-4o-mini
-    GPT_TEMPERATURE=0.2
-    GPT_MAX_TOKENS=500
 
     # Google Sheets
     SHEET_ID=

@@ -28,7 +28,7 @@ const {
   updateHoldings,
 } = require("./sheets.service");
 const { fetchETFs } = require("./yahoo.service");
-const { buildAllocationContext } = require("./gpt.service");
+const { buildAllocationContext } = require("../engine/sizing.engine");
 const { getZone } = require("../engine/signal.engine");
 const { runMarketScan } = require("../jobs/marketScan");
 const ETFs = require("../config/etfs");
@@ -222,7 +222,7 @@ function formatPnl(p) {
 
 /**
  * Live quote + dip zone for every ETF in the config (not just held ones).
- * Shape matches what gpt.service.buildAllocationContext() expects for `market`.
+ * Shape matches what sizing.engine.buildAllocationContext() expects for `market`.
  */
 async function buildMarket(allocation) {
   const quotes = await fetchETFs(ETFs.map((e) => e.symbol));
@@ -458,7 +458,7 @@ async function handleMessage(msg) {
     return;
   }
 
-  /* ── /target — allocation vs target, mirrors the GPT decision context ── */
+  /* ── /target — allocation vs target, same context the scan sizes buys from ── */
   if (lower === "/target" || lower === "/targets") {
     await sendTyping(chatId);
     try {

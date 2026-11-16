@@ -13,7 +13,6 @@ const cron = require("node-cron");
 const { sendMessageAlerts } = require("./src/services/messaging.service");
 const { log } = require("./src/utils/logger");
 const { runDailySavings } = require("./src/jobs/dailySavings");
-const { runMonthlyReset } = require("./src/jobs/monthlyReset");
 const { runMarketScan } = require("./src/jobs/marketScan");
 const { startTelegramListener } = require("./src/services/telegram.listener");
 const { loadAllocationConfig } = require("./src/services/sheets.service");
@@ -68,11 +67,6 @@ cron.schedule("30 9 * * 1-5", async () => {
 // 3:00 PM IST weekdays — market scan + buy decision
 cron.schedule("0 15 * * 1-5", async () => {
   await runMarketScan();
-}, { timezone: "Asia/Kolkata" });
-
-// 1st of month midnight — reset monthly cash
-cron.schedule("0 0 1 * *", async () => {
-  await runMonthlyReset();
 }, { timezone: "Asia/Kolkata" });
 
 // Heartbeat every 30 min

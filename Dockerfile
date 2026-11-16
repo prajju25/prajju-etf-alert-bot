@@ -19,5 +19,5 @@ ENV NODE_OPTIONS=--max-old-space-size=200
 # Expose health check port (required by Back4App Containers)
 EXPOSE 3000
 
-# Run the main bot (all cron jobs: daily savings, market scan, monthly reset)
+# Run the main bot (all cron jobs: daily savings, market scan)
 CMD ["node", "index.js"]

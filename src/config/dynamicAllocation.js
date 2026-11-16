@@ -15,6 +15,8 @@ let state = {
   monthlyBudget: base.monthlyBudget,
   dailyBase: base.dailyBase,
   dipRules: { ...base.dipRules },
+  buyTiers: base.buyTiers.map((t) => ({ ...t })),
+  dayCapMult: base.dayCapMult,
   maxAllocationPercent: { ...base.maxAllocationPercent },
 };
 

@@ -15,4 +15,16 @@ module.exports = {
     normal: 0,
     skipAbove: 1,
   },
+
+  // Dip-tier sizing (see src/engine/sizing.engine.js). An ETF that is down by
+  // at least minDrop% spends mult x its slice of the daily budget:
+  // 0-1% = 0.5x, 1-2% = 1x, 2-3% = 2x, 3%+ = 3x.
+  buyTiers: [
+    { minDrop: 0, mult: 0.5 },
+    { minDrop: 1, mult: 1 },
+    { minDrop: 2, mult: 2 },
+    { minDrop: 3, mult: 3 },
+  ],
+  // Total spend on one day is capped at this many times the fair daily budget.
+  dayCapMult: 3,
 };

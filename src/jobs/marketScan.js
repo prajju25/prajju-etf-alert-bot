@@ -2,7 +2,7 @@ const { get: getDynamicAllocation } = require("../config/dynamicAllocation");
 const ETFs = require("../config/etfs");
 const { violatesGuardrail } = require("../engine/guardrails.engine");
 const { getZone } = require("../engine/signal.engine");
-const { getBuySuggestions } = require("../services/gpt.service");
+const { buildAllocationContext, planBuys, tradingDaysLeft } = require("../engine/sizing.engine");
 const { sendMessageAlerts } = require("../services/messaging.service");
 const {
   getDailyCash,
@@ -12,7 +12,7 @@ const {
   updateDailyCash,
 } = require("../services/sheets.service");
 const { fetchETF } = require("../services/yahoo.service");
-const { isNSEHoliday } = require("../services/nse.service");
+const { isNSEHoliday, getDailyBudget } = require("../services/nse.service");
 const { sleep } = require("../services/yf-client");
 const { error, log, warn } = require("../utils/logger");
 const { nowIST } = require("../utils/time");
@@ -64,45 +64,39 @@ async function runMarketScan(opts = {}) {
       await sleep(1500);
     }
 
-    const gptDecision = await getBuySuggestions({
-      holdings,
-      market,
-      cash: dailyCash,
+    // Sizing is deterministic and paced (see engine/sizing.engine.js): the pool plus
+    // the rest of the month's savings is spread over the remaining trading days, and
+    // the drop tier (0-1 / 1-2 / 2-3 / 3+ %) scales each ETF's slice.
+    const rows = buildAllocationContext(holdings, market, allocation);
+    const plan = planBuys({
+      rows,
+      pool: dailyCash,
+      dailyAccrual: getDailyBudget(allocation.monthlyBudget),
+      daysLeft: tradingDaysLeft(),
       allocation,
+      isBlocked: (symbol) => {
+        const etf = ETFs.find((e) => e.symbol === symbol);
+        const blocked = !etf || violatesGuardrail(etf, holdings, totalInvested, allocation);
+        if (blocked) warn("Guardrail blocked " + symbol);
+        return blocked;
+      },
     });
+    log("Pace: budget Rs." + plan.budget + "/day, cap Rs." + plan.dayCap + ", " + plan.daysLeft + " trading days left, pool Rs." + dailyCash);
+    plan.skipped.forEach((s) => log("Skip " + s.symbol + ": " + s.reason));
 
-    const finalBuys = [];
-    let investingAmount = 0;
+    const finalBuys = plan.buy;
+    const investingAmount = Number(finalBuys.reduce((s, b) => s + b.amount, 0).toFixed(2));
+    dailyCash = Number((dailyCash - investingAmount).toFixed(2));
 
-    for (const buy of gptDecision.buy) {
-      const etf = ETFs.find((e) => e.symbol === buy.symbol);
-      if (!etf) continue;
+    let msg = (dryRun ? "[DRY RUN] " : "") + "ETF BOT - " + nowIST() + "\nToday Investing amount: Rs." + investingAmount + "\nCarry forwarded Cash: Rs." + dailyCash + "\nPace: Rs." + Math.round(plan.budget) + "/day over " + plan.daysLeft + " trading days left (max Rs." + Math.round(plan.dayCap) + " today)\n\n";
 
-      if (violatesGuardrail(etf, holdings, totalInvested, allocation)) {
-        warn("Guardrail blocked " + etf.name);
-        continue;
-      }
-
-      finalBuys.push(buy);
-      investingAmount += buy.price * buy.qty;
-    }
-    dailyCash -= investingAmount;
-
-    let msg = (dryRun ? "[DRY RUN] " : "") + "ETF BOT - " + nowIST() + "\nToday Investing amount: Rs." + investingAmount + "\nCarry forwarded Cash: Rs." + dailyCash + "\n\n";
-
-    if (gptDecision.error) {
-      // The AI step failed (bad key, outage, unparseable reply): say so instead of a
-      // misleading "No buy today". Strip Markdown specials - Telegram rejects the whole
-      // message on a stray _ or * and the alert would be silently lost.
-      const why = String(gptDecision.error).replace(/[_*`\[\]]/g, " ").slice(0, 200);
-      msg += "AI DECISION FAILED - no buys were evaluated today.\nReason: " + why + "\nCheck the Anthropic API key and Render logs.";
-    } else if (finalBuys.length) {
+    if (finalBuys.length) {
       msg += "BUY:\n";
       finalBuys.forEach((b) => {
-        msg += b.symbol + "\nPrice:Rs." + b.price + "\nQuantity:" + b.qty + "\nTotal Buy Order Price: Rs." + (b.price * b.qty) + "\nReason: " + b.reason + "\n\n";
+        msg += b.symbol + "\nPrice:Rs." + b.price + "\nQuantity:" + b.qty + "\nTotal Buy Order Price: Rs." + b.amount + "\nReason: " + b.reason + "\n\n";
       });
     } else {
-      msg += "No buy today (Market heated / rules blocked)";
+      msg += "No buy today (no ETF in a dip with room under its allocation target)";
     }
 
     await sendMessageAlerts(msg);
